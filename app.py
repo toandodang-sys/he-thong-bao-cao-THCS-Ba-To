@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="Hệ thống Báo cáo Tiết dạy", layout="centered")
 
 st.title("Hệ thống Nộp và Tổng hợp Báo cáo")
-st.write("Phiên bản Tối ưu (Trích xuất theo đúng tọa độ Cột và Dòng chuẩn của biểu mẫu).")
+st.write("Phiên bản Mở Rộng: Thêm cột Tổng số tiết thừa.")
 
 
 # --- HÀM COPY ĐỊNH DẠNG ---
@@ -72,7 +72,6 @@ def copy_sheet(source_sheet, target_sheet):
 
 
 def get_num(sheet, row, col):
-    """Hàm lấy giá trị số từ 1 ô cụ thể, xử lý cả trường hợp lẫn chữ"""
     v = sheet.cell(row=row, column=col).value
     if v is None:
         return 0
@@ -113,13 +112,15 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
     ws_th['A4'] = title_text
     ws_th['A4'].font = bold_font
     ws_th['A4'].alignment = center_aligned
-    ws_th.merge_cells('A4:J4')
+    # Đã thêm 1 cột, thay J bằng K
+    ws_th.merge_cells('A4:K4')
 
     ws_th['A5'] = f"({hoc_ky})"
     ws_th['A5'].font = th_font
     ws_th['A5'].alignment = center_aligned
-    ws_th.merge_cells('A5:J5')
+    ws_th.merge_cells('A5:K5')
 
+    # Header cập nhật thêm cột "Tổng số tiết thừa"
     headers = [
         "TT",
         "Họ và tên CB, giáo viên",
@@ -130,7 +131,8 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
         "Số tiết lấp giờ, tăng tiết",
         "Số tiết coi KT, dự giờ",
         "Tổng số tiết thực hiện",
-        "Ghi chú"
+        "Tổng số tiết thừa",  # Cột mới ở J
+        "Ghi chú"  # Chuyển sang K
     ]
 
     ws_th.row_dimensions[7].height = 40
@@ -144,7 +146,7 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
 
     ws_th.column_dimensions['A'].width = 5
     ws_th.column_dimensions['B'].width = 25
-    for col in ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']:
+    for col in ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K']:
         ws_th.column_dimensions[col].width = 15
 
     row_idx = 8
@@ -153,7 +155,6 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
     for sheet_name in list_of_sheets:
         source_ws = wb_merged[sheet_name]
 
-        # --- LẤY DỮ LIỆU CHÍNH XÁC THEO CỘT VÀ DÒNG BÁC ĐÃ CHỈ ---
         # 1. Cột H (8): Tiết thực dạy (Cộng từ dòng 13 đến 78)
         t_day = sum(get_num(source_ws, r, 8) for r in range(13, 79))
 
@@ -174,6 +175,12 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
 
         tong_cong = t_day + t_kiem_nhiem + t_cong_tac + t_day_thay + t_tang_tiet + t_coi_kt
 
+        # Cột J mới: Tổng tiết thừa = Tổng thực hiện - 19
+        tiet_thua = tong_cong - 19
+        # Nếu tổng số tiết bé hơn 19 thì gán lại là 0 thay vì số âm
+        if tiet_thua < 0:
+            tiet_thua = 0
+
         data_row = [
             tt,
             sheet_name,
@@ -184,7 +191,8 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
             t_tang_tiet,
             t_coi_kt,
             tong_cong,
-            ""
+            tiet_thua,  # Đưa vào cột J
+            ""  # Ghi chú cột K
         ]
 
         for col, val in enumerate(data_row, 1):
