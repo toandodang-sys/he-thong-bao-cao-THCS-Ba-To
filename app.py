@@ -6,11 +6,40 @@ import io
 import os
 import re
 
-# Đã cập nhật icon ngôi sao tươi sáng cho tab trình duyệt
+# Icon ngôi sao tươi sáng cho tab trình duyệt
 st.set_page_config(page_title="Hệ thống Báo cáo Tiết dạy", page_icon="🌟", layout="wide")
 
-st.title("Hệ thống Nộp và Tổng hợp Báo cáo Trường THCS Ba Tơ")
-st.write("Phiên bản Quản lý Chuyên sâu: Theo dõi tiến độ nộp bài của Giáo viên.")
+st.title("Hệ thống Nộp và Tổng hợp Báo cáo")
+st.write("Phiên bản 13.2: Nhận diện thông minh tên các môn học viết tắt/viết sai.")
+
+# --- CÁC DANH MỤC CỐ ĐỊNH & TỪ KHÓA NHẬN DIỆN ---
+DANH_SACH_LOP = ['6A1', '6A2', '6A3', '6A4', '7A1', '7A2', '7A3', '7A4', '8A1', '8A2', '8A3', '8A4', '9A1', '9A2',
+                 '9A3', '9A4']
+
+MON_HOC_CHINH = [
+    {"tt": "1", "ten": "Ngữ văn", "loai": "don", "keys": ["văn"]},
+    {"tt": "2", "ten": "Toán", "loai": "don", "keys": ["toán"]},
+    {"tt": "3", "ten": "Tiếng Anh", "loai": "don", "keys": ["anh"]},
+    {"tt": "4", "ten": "GDCD", "loai": "don", "keys": ["gdcd", "công dân"]},
+    {"tt": "5", "ten": "LS&ĐL", "loai": "gop", "con": [
+        {"ten": "Lịch sử", "keys": ["sử"]},
+        {"ten": "Địa lí", "keys": ["địa"], "avoid": ["địa phương"]}
+    ]},
+    {"tt": "6", "ten": "KHTN", "loai": "gop", "con": [
+        {"ten": "Lí", "keys": ["lí", "lý"], "avoid": ["địa lí", "địa lý", "quản lí", "quản lý"]},
+        {"ten": "Hóa", "keys": ["hóa"]},
+        {"ten": "Sinh", "keys": ["sinh"], "avoid": ["sinh hoạt", "shl"]}
+    ]},
+    {"tt": "7", "ten": "Công nghệ", "loai": "don", "keys": ["công nghệ"]},
+    {"tt": "8", "ten": "Tin học", "loai": "don", "keys": ["tin"]},
+    {"tt": "9", "ten": "GDTC", "loai": "don", "keys": ["gdtc", "thể dục"]},
+    {"tt": "10", "ten": "Nghệ thuật", "loai": "gop", "con": [
+        {"ten": "Mĩ thuật", "keys": ["mĩ thuật", "mỹ thuật", "mĩ", "mỹ"]},
+        {"ten": "Âm nhạc", "keys": ["nhạc"]}
+    ]},
+    {"tt": "11", "ten": "HĐTN&HN", "loai": "don", "keys": ["hđtn", "trải nghiệm"]},
+    {"tt": "12", "ten": "GDĐP", "loai": "don", "keys": ["gdđp", "địa phương"]},
+]
 
 
 # --- HÀM COPY ĐỊNH DẠNG ---
@@ -69,257 +98,277 @@ def copy_sheet(source_sheet, target_sheet):
         except:
             pass
 
-        # --- HÀM TRÍCH XUẤT SỐ ---
+        # --- CÁC HÀM XỬ LÝ SỐ VÀ CHỮ ---
 
 
 def get_num(sheet, row, col):
     v = sheet.cell(row=row, column=col).value
-    if v is None:
-        return 0
+    if v is None: return 0
     s = str(v).strip()
     match = re.search(r'\d+(\.\d+)?', s)
-    if match:
-        return float(match.group()) if '.' in match.group() else int(match.group())
-    return 0
+    return float(match.group()) if match else 0
+
+
+def is_match(val, keys, avoid=None):
+    if avoid and any(a in val for a in avoid):
+        return False
+    return any(k in val for k in keys)
+
+
+# --- HÀM TẠO SHEET CHƯƠNG TRÌNH (BÊN TRÁI) ---
+def create_program_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
+    ws_ct = wb_merged.create_sheet(title="Chương trình", index=0)
+
+    bold_font = Font(name='Times New Roman', size=11, bold=True)
+    normal_font = Font(name='Times New Roman', size=11)
+    center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'),
+                         bottom=Side(style='thin'))
+
+    prog_data = {}
+
+    # Quét dữ liệu và bóc tách thông minh
+    for sheet_name in list_of_sheets:
+        source_ws = wb_merged[sheet_name]
+        for r in range(13, 79):
+            mon_val = str(source_ws.cell(row=r, column=5).value or "").strip()
+            lop_val = str(source_ws.cell(row=r, column=6).value or "").strip().upper()
+            tiet_val = get_num(source_ws, r, 7)
+
+            if mon_val and lop_val in DANH_SACH_LOP:
+                mon_val_lower = mon_val.lower()
+                mon_found = None
+                for m in MON_HOC_CHINH:
+                    if mon_found: break
+                    if m['loai'] == 'don':
+                        if is_match(mon_val_lower, m.get('keys', []), m.get('avoid', [])):
+                            mon_found = m['ten']
+                    elif m['loai'] == 'gop':
+                        for c in m['con']:
+                            if is_match(mon_val_lower, c.get('keys', []), c.get('avoid', [])):
+                                mon_found = c['ten']
+                                break
+
+                if mon_found:
+                    if mon_found not in prog_data: prog_data[mon_found] = {}
+                    prog_data[mon_found][lop_val] = max(prog_data[mon_found].get(lop_val, 0), tiet_val)
+
+    ws_ct.merge_cells('A1:C1');
+    ws_ct['A1'] = "UBND XÃ BA TƠ";
+    ws_ct['A1'].font = bold_font
+    ws_ct.merge_cells('E1:L1');
+    ws_ct['E1'] = "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM";
+    ws_ct['E1'].font = bold_font;
+    ws_ct['E1'].alignment = center_align
+    ws_ct.merge_cells('A2:C2');
+    ws_ct['A2'] = "TRƯỜNG THCS BA TƠ";
+    ws_ct['A2'].font = bold_font
+    ws_ct.merge_cells('E2:L2');
+    ws_ct['E2'] = "Độc lập - Tự do - Hạnh phúc";
+    ws_ct['E2'].font = bold_font;
+    ws_ct['E2'].alignment = center_align
+
+    ws_ct.merge_cells('A4:S4');
+    ws_ct['A4'] = "BÁO CÁO THỰC HIỆN TIẾN ĐỘ CHƯƠNG TRÌNH";
+    ws_ct['A4'].font = bold_font;
+    ws_ct['A4'].alignment = center_align
+    ws_ct.merge_cells('A5:S5');
+    ws_ct['A5'] = f"({tuan}, {hoc_ky}, năm học {nam_hoc})";
+    ws_ct['A5'].font = bold_font;
+    ws_ct['A5'].alignment = center_align
+
+    ws_ct.merge_cells('A7:A8');
+    ws_ct['A7'] = "TT"
+    ws_ct.merge_cells('B7:B8');
+    ws_ct['B7'] = "Môn/HĐGD"
+    ws_ct.merge_cells('C7:R7');
+    ws_ct['C7'] = "Lớp"
+    ws_ct.merge_cells('S7:S8');
+    ws_ct['S7'] = "Ghi chú"
+
+    for c_idx, lop in enumerate(DANH_SACH_LOP, 3):
+        ws_ct.cell(row=8, column=c_idx).value = lop
+
+    for r in range(7, 9):
+        for c in range(1, 20):
+            cell = ws_ct.cell(row=r, column=c)
+            cell.border = thin_border
+            cell.font = bold_font
+            cell.alignment = center_align
+
+    curr_row = 9
+    for m in MON_HOC_CHINH:
+        ws_ct.cell(row=curr_row, column=1).value = m['tt']
+        ws_ct.cell(row=curr_row, column=2).value = m['ten']
+
+        if m['loai'] == 'gop':
+            for c_idx in range(3, 19):
+                ws_ct.cell(row=curr_row, column=c_idx).value = "x"
+                ws_ct.cell(row=curr_row, column=c_idx).alignment = center_align
+        else:
+            for c_idx, lop in enumerate(DANH_SACH_LOP, 3):
+                val = prog_data.get(m['ten'], {}).get(lop, "")
+                if val == 0: val = ""
+                ws_ct.cell(row=curr_row, column=c_idx).value = val
+                ws_ct.cell(row=curr_row, column=c_idx).alignment = center_align
+
+        for c in range(1, 20): ws_ct.cell(row=curr_row, column=c).border = thin_border
+        ws_ct.cell(row=curr_row, column=2).font = bold_font
+        curr_row += 1
+
+        if m['loai'] == 'gop':
+            for con in m['con']:
+                ws_ct.cell(row=curr_row, column=2).value = f"- {con['ten']}"
+                for c_idx, lop in enumerate(DANH_SACH_LOP, 3):
+                    val = prog_data.get(con['ten'], {}).get(lop, "")
+                    if val == 0: val = ""
+                    ws_ct.cell(row=curr_row, column=c_idx).value = val
+                    ws_ct.cell(row=curr_row, column=c_idx).alignment = center_align
+                for c in range(1, 20): ws_ct.cell(row=curr_row, column=c).border = thin_border
+                curr_row += 1
+
+    curr_row += 2
+    ws_ct.merge_cells(f'M{curr_row}:S{curr_row}');
+    ws_ct[f'M{curr_row}'] = "Ba Tơ, ngày      tháng     năm 2026";
+    ws_ct[f'M{curr_row}'].alignment = center_align
+    curr_row += 1
+    ws_ct.merge_cells(f'M{curr_row}:S{curr_row}');
+    ws_ct[f'M{curr_row}'] = "PHÓ HIỆU TRƯỞNG";
+    ws_ct[f'M{curr_row}'].font = bold_font;
+    ws_ct[f'M{curr_row}'].alignment = center_align
+
+    ws_ct.column_dimensions['A'].width = 5
+    ws_ct.column_dimensions['B'].width = 15
+    for c in 'CDEFGHIJKLMNOPQR': ws_ct.column_dimensions[c].width = 5
+    ws_ct.column_dimensions['S'].width = 25
 
 
 # --- HÀM TẠO SHEET TỔNG HỢP ---
 def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
     ws_th = wb_merged.create_sheet(title="Tổng hợp")
-
     th_font = Font(name='Times New Roman', size=11)
     bold_font = Font(name='Times New Roman', size=11, bold=True)
     center_aligned = Alignment(horizontal="center", vertical="center", wrap_text=True)
     thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'),
                          bottom=Side(style='thin'))
 
-    ws_th['A1'] = "UBND XÃ BA TƠ"
+    ws_th['A1'] = "UBND XÃ BA TƠ";
     ws_th['D1'] = "CỘNG HOÀ XÃ HỘI CHỦ NGHĨA VIỆT NAM"
-    ws_th['A2'] = "TRƯỜNG THCS BA TƠ"
+    ws_th['A2'] = "TRƯỜNG THCS BA TƠ";
     ws_th['D2'] = "Độc lập – Tự do – Hạnh phúc"
-
-    for row in range(1, 3):
-        ws_th.cell(row=row, column=1).font = bold_font
-        ws_th.cell(row=row, column=4).font = bold_font
-        ws_th.cell(row=row, column=1).alignment = center_aligned
-        ws_th.cell(row=row, column=4).alignment = center_aligned
-
-    ws_th.merge_cells('A1:B1')
-    ws_th.merge_cells('D1:G1')
-    ws_th.merge_cells('A2:B2')
+    ws_th.merge_cells('A1:B1');
+    ws_th.merge_cells('D1:G1');
+    ws_th.merge_cells('A2:B2');
     ws_th.merge_cells('D2:G2')
 
     title_text = f"BẢNG TỔNG HỢP THEO DÕI BÁO CÁO THỰC HIỆN CHƯƠNG TRÌNH, TIẾT DẠY HÀNG TUẦN - NĂM HỌC {nam_hoc}"
-    ws_th['A4'] = title_text
+    ws_th['A4'] = title_text;
+    ws_th.merge_cells('A4:K4');
+    ws_th['A4'].alignment = center_aligned;
     ws_th['A4'].font = bold_font
-    ws_th['A4'].alignment = center_aligned
-    ws_th.merge_cells('A4:K4')
-
-    ws_th['A5'] = f"({hoc_ky})"
-    ws_th['A5'].font = th_font
+    ws_th['A5'] = f"({hoc_ky})";
+    ws_th.merge_cells('A5:K5');
     ws_th['A5'].alignment = center_aligned
-    ws_th.merge_cells('A5:K5')
 
-    headers = [
-        "TT",
-        "Họ và tên CB, giáo viên",
-        "Tổng số tiết thực dạy",
-        "Số tiết kiêm nhiệm",
-        "Số tiết đi công tác",
-        "Số tiết dạy thay",
-        "Số tiết lấp giờ, tăng tiết",
-        "Số tiết coi KT, dự giờ",
-        "Tổng số tiết thực hiện",
-        "Tổng số tiết thừa",
-        "Ghi chú"
-    ]
-
-    ws_th.row_dimensions[7].height = 40
-
-    for col, header in enumerate(headers, 1):
-        cell = ws_th.cell(row=7, column=col)
-        cell.value = header
-        cell.font = bold_font
-        cell.alignment = center_aligned
+    headers = ["TT", "Họ và tên CB, giáo viên", "Tổng số tiết thực dạy", "Số tiết kiêm nhiệm", "Số tiết đi công tác",
+               "Số tiết dạy thay", "Số tiết lấp giờ, tăng tiết", "Số tiết coi KT, dự giờ", "Tổng số tiết thực hiện",
+               "Tổng số tiết thừa", "Ghi chú"]
+    for col, h in enumerate(headers, 1):
+        cell = ws_th.cell(row=7, column=col);
+        cell.value = h;
+        cell.font = bold_font;
+        cell.alignment = center_aligned;
         cell.border = thin_border
 
-    ws_th.column_dimensions['A'].width = 5
-    ws_th.column_dimensions['B'].width = 25
-    for col in ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K']:
-        ws_th.column_dimensions[col].width = 15
-
     row_idx = 8
-    tt = 1
-
-    for sheet_name in list_of_sheets:
+    for tt, sheet_name in enumerate(list_of_sheets, 1):
         source_ws = wb_merged[sheet_name]
-
         t_day = sum(get_num(source_ws, r, 8) for r in range(13, 79))
-        t_kiem_nhiem = get_num(source_ws, 80, 8) + get_num(source_ws, 81, 8)
-        t_cong_tac = sum(get_num(source_ws, r, 9) for r in range(13, 79))
-        t_day_thay = sum(get_num(source_ws, r, 10) for r in range(13, 79))
-        t_tang_tiet = sum(get_num(source_ws, r, 11) for r in range(13, 79))
-        t_coi_kt = sum(get_num(source_ws, r, 12) for r in range(13, 79))
+        t_kiem = get_num(source_ws, 80, 8) + get_num(source_ws, 81, 8)
+        t_cong = sum(get_num(source_ws, r, 9) for r in range(13, 79))
+        t_thay = sum(get_num(source_ws, r, 10) for r in range(13, 79))
+        t_tang = sum(get_num(source_ws, r, 11) for r in range(13, 79))
+        t_coi = sum(get_num(source_ws, r, 12) for r in range(13, 79))
+        tong = t_day + t_kiem + t_cong + t_thay + t_tang + t_coi
+        thua = max(0, tong - 19)
 
-        tong_cong = t_day + t_kiem_nhiem + t_cong_tac + t_day_thay + t_tang_tiet + t_coi_kt
-
-        tiet_thua = tong_cong - 19
-        if tiet_thua < 0:
-            tiet_thua = 0
-
-        data_row = [
-            tt,
-            sheet_name,
-            t_day,
-            t_kiem_nhiem,
-            t_cong_tac,
-            t_day_thay,
-            t_tang_tiet,
-            t_coi_kt,
-            tong_cong,
-            tiet_thua,
-            ""
-        ]
-
-        for col, val in enumerate(data_row, 1):
-            cell = ws_th.cell(row=row_idx, column=col)
-            cell.value = val
-            cell.font = th_font
+        vals = [tt, sheet_name, t_day, t_kiem, t_cong, t_thay, t_tang, t_coi, tong, thua, ""]
+        for col, v in enumerate(vals, 1):
+            cell = ws_th.cell(row=row_idx, column=col);
+            cell.value = v;
+            cell.border = thin_border;
             cell.alignment = center_aligned
-            cell.border = thin_border
 
         row_idx += 1
-        tt += 1
 
 
-# --- TẠO THƯ MỤC LƯU TRỮ ---
+# --- PHẦN STREAMLIT ---
 SAVE_DIR = "Du_Lieu_Bao_Cao"
-if not os.path.exists(SAVE_DIR):
-    os.makedirs(SAVE_DIR)
+if not os.path.exists(SAVE_DIR): os.makedirs(SAVE_DIR)
 
-# --- DANH SÁCH GIÁO VIÊN ---
-DANH_SACH_GV = [
-    "Nguyễn Văn Lộc", "Đỗ Văn Linh", "Huỳnh Thị Hạ Quyên", "Phạm Thị Mỹ Thuận",
-    "Huỳnh Thị Huyên", "Đỗ Đặng Toàn", "Bùi Thị Xuân Nhựt", "Nguyễn Thị Như Ái",
-    "Phạm Thị Lai Tình", "Trần Văn Hoàng", "Ngô Hữu Hoá", "Phạm Thuỵ Thuỳ Nghi",
-    "Đỗ Thanh Vũ", "Phạm Bá Quyết", "Võ Quang Tuyên", "Nguyễn Văn Thân",
-    "Nguyễn Minh Văn", "Lê Thị Tuyết Lệ", "Trần Đình Thảo", "Bùi Thanh Tâm",
-    "Bùi Thị Bích Vân", "K Mah Ri Lan", "Nguyễn Mẫn Thu", "Lê Thị Kim Tuyết",
-    "Lê Thị Tường Vy", "Nguyễn Thị Thúy Hằng", "Trần Thị Kim Anh", "Nguyễn Thị Hoan",
-    "Đinh Thị Xuân Trâm"
-]
+DANH_SACH_GV = ["Nguyễn Văn Lộc", "Đỗ Văn Linh", "Huỳnh Thị Hạ Quyên", "Phạm Thị Mỹ Thuận", "Huỳnh Thị Huyên",
+                "Đỗ Đặng Toàn", "Bùi Thị Xuân Nhựt", "Nguyễn Thị Như Ái", "Phạm Thị Lai Tình", "Trần Văn Hoàng",
+                "Ngô Hữu Hoá", "Phạm Thuỵ Thuỳ Nghi", "Đỗ Thanh Vũ", "Phạm Bá Quyết", "Võ Quang Tuyên",
+                "Nguyễn Văn Thân", "Nguyễn Minh Văn", "Lê Thị Tuyết Lệ", "Trần Đình Thảo", "Bùi Thanh Tâm",
+                "Bùi Thị Bích Vân", "K Mah Ri Lan", "Nguyễn Mẫn Thu", "Lê Thị Kim Tuyết", "Lê Thị Tường Vy",
+                "Nguyễn Thị Thúy Hằng", "Trần Thị Kim Anh", "Nguyễn Thị Hoan", "Đinh Thị Xuân Trâm"]
 
-# Sidebar Cấu Hình Chung
 st.sidebar.header("Cài đặt thông số")
 nam_hoc = st.sidebar.text_input("Năm học:", "2025 - 2026")
 hoc_ky = st.sidebar.selectbox("Học kỳ:", ["HỌC KỲ I", "HỌC KỲ II"], index=1)
-
 danh_sach_tuan = [f"Tuần {i}" for i in range(1, 36)]
 
 tab1, tab2 = st.tabs(["📤 Khu vực Giáo viên nộp bài", "⚙️ Khu vực Quản lý tổng hợp"])
 
 with tab1:
-    st.header(f"Nộp báo cáo hàng tuần ({hoc_ky} - {nam_hoc})")
-
+    st.header(f"Nộp báo cáo ({hoc_ky} - {nam_hoc})")
     tuan_nop = st.selectbox("Chọn tuần báo cáo:", danh_sach_tuan, index=24)
     ten_gv = st.selectbox("Chọn tên của bạn:", DANH_SACH_GV)
-    uploaded_file = st.file_uploader("Chọn file Excel báo cáo (.xlsx) của bạn", type=['xlsx'])
-
+    uploaded_file = st.file_uploader("Chọn file Excel", type=['xlsx'])
     if st.button("📤 Nộp Báo Cáo"):
-        if not uploaded_file:
-            st.warning("⚠️ Vui lòng chọn file báo cáo!")
-        else:
-            ky_nam_dir = os.path.join(SAVE_DIR, nam_hoc.replace(" ", ""), hoc_ky.replace(" ", "_"))
-            tuan_dir = os.path.join(ky_nam_dir, tuan_nop.replace(" ", "_"))
-
-            if not os.path.exists(tuan_dir):
-                os.makedirs(tuan_dir)
-
-            file_path = os.path.join(tuan_dir, f"{ten_gv}.xlsx")
-            with open(file_path, "wb") as f:
+        if uploaded_file:
+            path = os.path.join(SAVE_DIR, nam_hoc.replace(" ", ""), hoc_ky.replace(" ", "_"),
+                                tuan_nop.replace(" ", "_"))
+            if not os.path.exists(path): os.makedirs(path)
+            with open(os.path.join(path, f"{ten_gv}.xlsx"), "wb") as f:
                 f.write(uploaded_file.getbuffer())
-
-            st.success(
-                f"🎉 Đã lưu thành công! Giáo viên **{ten_gv}** đã nộp báo cáo cho **{tuan_nop}**, {hoc_ky}, Năm học {nam_hoc}.")
-            st.info(
-                "💡 Nếu bạn nộp nhầm file, chỉ cần chọn lại tên và nộp file mới. Hệ thống sẽ tự động thay thế file cũ.")
+            st.success("Nộp thành công!")
 
 with tab2:
     st.header("Danh sách và Tổng hợp")
-    tuan_tong_hop = st.selectbox("Chọn tuần cần kiểm tra và tổng hợp:", danh_sach_tuan, index=24, key="tuan_th")
+    tuan_th = st.selectbox("Chọn tuần tổng hợp:", danh_sach_tuan, index=24)
+    path_th = os.path.join(SAVE_DIR, nam_hoc.replace(" ", ""), hoc_ky.replace(" ", "_"), tuan_th.replace(" ", "_"))
 
-    ky_nam_dir_th = os.path.join(SAVE_DIR, nam_hoc.replace(" ", ""), hoc_ky.replace(" ", "_"))
-    tuan_dir_th = os.path.join(ky_nam_dir_th, tuan_tong_hop.replace(" ", "_"))
+    files = [f for f in os.listdir(path_th) if f.endswith('.xlsx')] if os.path.exists(path_th) else []
+    gv_da_nop = [f.replace('.xlsx', '') for f in files]
+    gv_chua_nop = [g for g in DANH_SACH_GV if g not in gv_da_nop]
 
-    danh_sach_file = []
-    if os.path.exists(tuan_dir_th):
-        danh_sach_file = [f for f in os.listdir(tuan_dir_th) if f.endswith('.xlsx')]
-
-    # Logic phân loại giáo viên đã nộp và chưa nộp
-    gv_da_nop = [f.replace('.xlsx', '') for f in danh_sach_file]
-    gv_chua_nop = [gv for gv in DANH_SACH_GV if gv not in gv_da_nop]
-
-    st.write("---")
-    # TẠO 2 CỘT HIỂN THỊ DANH SÁCH
     col1, col2 = st.columns(2)
-
     with col1:
-        st.subheader(f"✅ Đã nộp ({len(gv_da_nop)}/{len(DANH_SACH_GV)})")
-        if len(gv_da_nop) > 0:
-            for gv in gv_da_nop:
-                st.write(f"- {gv}")
-        else:
-            st.info("Chưa có giáo viên nào nộp.")
+        st.subheader(f"✅ Đã nộp ({len(gv_da_nop)})")
+        for g in gv_da_nop: st.write(f"- {g}")
 
     with col2:
         st.subheader(f"⏳ Chưa nộp ({len(gv_chua_nop)})")
-        if len(gv_chua_nop) > 0:
-            for gv in gv_chua_nop:
-                st.write(f"- {gv}")
-        else:
-            st.success("Tuyệt vời! Tất cả giáo viên đã nộp đủ báo cáo.")
+        for g in gv_chua_nop: st.write(f"- {g}")
 
-    st.write("---")
+    if files and st.button(f"⚙️ Tiến hành tổng hợp {tuan_th}"):
+        wb_merged = openpyxl.Workbook()
+        wb_merged.remove(wb_merged.active)
+        with st.spinner('Đang tổng hợp dữ liệu...'):
+            list_s = []
+            for f in files:
+                ws_src = openpyxl.load_workbook(os.path.join(path_th, f), data_only=True).active
+                name = f.replace('.xlsx', '')[:31]
+                ws_tgt = wb_merged.create_sheet(title=name)
+                copy_sheet(ws_src, ws_tgt)
+                list_s.append(name)
 
-    if len(danh_sach_file) > 0:
-        if st.button(f"⚙️ Tiến hành tổng hợp {tuan_tong_hop}"):
-            wb_merged = openpyxl.Workbook()
-            for style in wb_merged._named_styles:
-                if style.name == 'Normal':
-                    style.font = Font(name='Times New Roman', size=11)
-            wb_merged.remove(wb_merged.active)
+            # Tạo 2 sheet báo cáo tổng hợp
+            create_program_sheet(wb_merged, list_s, nam_hoc, hoc_ky, tuan_th)
+            create_summary_sheet(wb_merged, list_s, nam_hoc, hoc_ky, tuan_th)
 
-            list_of_sheets = []
-
-            with st.spinner('Đang xử lý, trích xuất dữ liệu và đồng bộ Font...'):
-                for f_name in danh_sach_file:
-                    file_path = os.path.join(tuan_dir_th, f_name)
-                    try:
-                        wb_source = openpyxl.load_workbook(file_path, data_only=True)
-                        source_sheet = wb_source.active
-
-                        sheet_name = f_name.replace('.xlsx', '')[:31]
-                        target_sheet = wb_merged.create_sheet(title=sheet_name)
-                        copy_sheet(source_sheet, target_sheet)
-                        list_of_sheets.append(sheet_name)
-
-                    except Exception as e:
-                        st.error(f"❌ Lỗi ở file '{f_name}': {e}")
-
-                if len(list_of_sheets) > 0:
-                    create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan_tong_hop)
-
-            if len(wb_merged.sheetnames) > 0:
-                output = io.BytesIO()
-                wb_merged.save(output)
-                output.seek(0)
-
-                file_name_out = f"Tong_hop_BC_{nam_hoc.replace(' ', '')}_{hoc_ky.replace(' ', '_')}_{tuan_tong_hop.replace(' ', '_')}.xlsx"
-                st.download_button(
-                    label=f"📥 Tải file tổng hợp {tuan_tong_hop} về máy",
-                    data=output,
-                    file_name=file_name_out,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-    else:
-        st.info(f"Chưa có file nào để tổng hợp trong {tuan_tong_hop} ({hoc_ky} - {nam_hoc}).")
+            output = io.BytesIO()
+            wb_merged.save(output)
+            st.download_button(label="📥 Tải file tổng hợp", data=output.getvalue(),
+                               file_name=f"Tong_hop_{tuan_th}.xlsx")
