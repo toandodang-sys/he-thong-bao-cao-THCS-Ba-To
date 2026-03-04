@@ -6,10 +6,11 @@ import io
 import os
 import re
 
-st.set_page_config(page_title="Hệ thống Báo cáo Tiết dạy",page_icon="🌟", layout="centered")
+# Đã cập nhật icon ngôi sao tươi sáng cho tab trình duyệt
+st.set_page_config(page_title="Hệ thống Báo cáo Tiết dạy", page_icon="🌟", layout="wide")
 
-st.title("Hệ thống Nộp và Tổng hợp Báo cáo")
-st.write("Phiên bản Mở Rộng: Thêm cột Tổng số tiết thừa.")
+st.title("Hệ thống Nộp và Tổng hợp Báo cáo Trường THCS Ba Tơ")
+st.write("Phiên bản Quản lý Chuyên sâu: Theo dõi tiến độ nộp bài của Giáo viên.")
 
 
 # --- HÀM COPY ĐỊNH DẠNG ---
@@ -112,7 +113,6 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
     ws_th['A4'] = title_text
     ws_th['A4'].font = bold_font
     ws_th['A4'].alignment = center_aligned
-    # Đã thêm 1 cột, thay J bằng K
     ws_th.merge_cells('A4:K4')
 
     ws_th['A5'] = f"({hoc_ky})"
@@ -120,7 +120,6 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
     ws_th['A5'].alignment = center_aligned
     ws_th.merge_cells('A5:K5')
 
-    # Header cập nhật thêm cột "Tổng số tiết thừa"
     headers = [
         "TT",
         "Họ và tên CB, giáo viên",
@@ -131,8 +130,8 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
         "Số tiết lấp giờ, tăng tiết",
         "Số tiết coi KT, dự giờ",
         "Tổng số tiết thực hiện",
-        "Tổng số tiết thừa",  # Cột mới ở J
-        "Ghi chú"  # Chuyển sang K
+        "Tổng số tiết thừa",
+        "Ghi chú"
     ]
 
     ws_th.row_dimensions[7].height = 40
@@ -155,29 +154,16 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
     for sheet_name in list_of_sheets:
         source_ws = wb_merged[sheet_name]
 
-        # 1. Cột H (8): Tiết thực dạy (Cộng từ dòng 13 đến 78)
         t_day = sum(get_num(source_ws, r, 8) for r in range(13, 79))
-
-        # 2. Số tiết kiêm nhiệm: Lấy từ Cột H (8), dòng 80 và 81
         t_kiem_nhiem = get_num(source_ws, 80, 8) + get_num(source_ws, 81, 8)
-
-        # 3. Cột I (9): Đi công tác
         t_cong_tac = sum(get_num(source_ws, r, 9) for r in range(13, 79))
-
-        # 4. Cột J (10): Dạy thay
         t_day_thay = sum(get_num(source_ws, r, 10) for r in range(13, 79))
-
-        # 5. Cột K (11): Lấp giờ, tăng tiết
         t_tang_tiet = sum(get_num(source_ws, r, 11) for r in range(13, 79))
-
-        # 6. Cột L (12): Coi KT, dự giờ
         t_coi_kt = sum(get_num(source_ws, r, 12) for r in range(13, 79))
 
         tong_cong = t_day + t_kiem_nhiem + t_cong_tac + t_day_thay + t_tang_tiet + t_coi_kt
 
-        # Cột J mới: Tổng tiết thừa = Tổng thực hiện - 19
         tiet_thua = tong_cong - 19
-        # Nếu tổng số tiết bé hơn 19 thì gán lại là 0 thay vì số âm
         if tiet_thua < 0:
             tiet_thua = 0
 
@@ -191,8 +177,8 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
             t_tang_tiet,
             t_coi_kt,
             tong_cong,
-            tiet_thua,  # Đưa vào cột J
-            ""  # Ghi chú cột K
+            tiet_thua,
+            ""
         ]
 
         for col, val in enumerate(data_row, 1):
@@ -269,12 +255,33 @@ with tab2:
     if os.path.exists(tuan_dir_th):
         danh_sach_file = [f for f in os.listdir(tuan_dir_th) if f.endswith('.xlsx')]
 
-    st.subheader(f"Danh sách đã nộp ({len(danh_sach_file)}/{len(DANH_SACH_GV)} giáo viên):")
-    if len(danh_sach_file) > 0:
-        for f_name in danh_sach_file:
-            st.write(f"✅ {f_name.replace('.xlsx', '')}")
+    # Logic phân loại giáo viên đã nộp và chưa nộp
+    gv_da_nop = [f.replace('.xlsx', '') for f in danh_sach_file]
+    gv_chua_nop = [gv for gv in DANH_SACH_GV if gv not in gv_da_nop]
 
-        st.write("---")
+    st.write("---")
+    # TẠO 2 CỘT HIỂN THỊ DANH SÁCH
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader(f"✅ Đã nộp ({len(gv_da_nop)}/{len(DANH_SACH_GV)})")
+        if len(gv_da_nop) > 0:
+            for gv in gv_da_nop:
+                st.write(f"- {gv}")
+        else:
+            st.info("Chưa có giáo viên nào nộp.")
+
+    with col2:
+        st.subheader(f"⏳ Chưa nộp ({len(gv_chua_nop)})")
+        if len(gv_chua_nop) > 0:
+            for gv in gv_chua_nop:
+                st.write(f"- {gv}")
+        else:
+            st.success("Tuyệt vời! Tất cả giáo viên đã nộp đủ báo cáo.")
+
+    st.write("---")
+
+    if len(danh_sach_file) > 0:
         if st.button(f"⚙️ Tiến hành tổng hợp {tuan_tong_hop}"):
             wb_merged = openpyxl.Workbook()
             for style in wb_merged._named_styles:
@@ -315,4 +322,4 @@ with tab2:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
     else:
-        st.info(f"Chưa có giáo viên nào nộp báo cáo trong {tuan_tong_hop} ({hoc_ky} - {nam_hoc}).")
+        st.info(f"Chưa có file nào để tổng hợp trong {tuan_tong_hop} ({hoc_ky} - {nam_hoc}).")
