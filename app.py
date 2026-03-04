@@ -6,7 +6,7 @@ import io
 import os
 import re
 
-st.set_page_config(page_title="Hệ thống Báo cáo Tiết dạy", layout="centered")
+st.set_page_config(page_title="Hệ thống Báo cáo Tiết dạy",page_icon="🌟", layout="centered")
 
 st.title("Hệ thống Nộp và Tổng hợp Báo cáo")
 st.write("Phiên bản Mở Rộng: Thêm cột Tổng số tiết thừa.")
