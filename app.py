@@ -10,7 +10,7 @@ import datetime
 st.set_page_config(page_title="Hệ thống Báo cáo Tiết dạy", page_icon="🌟", layout="wide")
 
 st.title("Hệ thống Nộp và Tổng hợp Báo cáo")
-st.write("Phiên bản 15.0: Định vị Bảng thông minh (Khắc phục triệt để lỗi nhân đôi số liệu).")
+st.write("Phiên bản 15.1: Radar quét ngang Hàng 10 để bắt tuyệt đối Số tiết Kiêm nhiệm.")
 
 # --- CÁC DANH MỤC CỐ ĐỊNH & TỪ KHÓA NHẬN DIỆN ---
 DANH_SACH_LOP = ['6A1', '6A2', '6A3', '6A4', '7A1', '7A2', '7A3', '7A4', '8A1', '8A2', '8A3', '8A4', '9A1', '9A2', '9A3', '9A4']
@@ -70,7 +70,6 @@ def copy_sheet(source_sheet, target_sheet):
         except: pass 
 
 def get_num(sheet, row, col):
-    """Hàm bóc tách số liệu, xử lý luôn cả lỗi gõ dấu phẩy (1,5) của giáo viên"""
     v = sheet.cell(row=row, column=col).value
     if v is None or str(v).strip() == "": return 0
     s = str(v).strip().replace(',', '.')
@@ -84,10 +83,8 @@ def is_match(val, keys, avoid=None):
     if avoid and any(a in val for a in avoid): return False
     return any(k in val for k in keys)
 
-# --- THUẬT TOÁN ĐỊNH VỊ BẢNG MỚI ---
 def get_table_bounds(sheet):
     start_row = 17 
-    # Tìm dòng bắt đầu (Dòng ngay dưới chữ "TT")
     for r in range(1, 40):
         val_a = str(sheet.cell(row=r, column=1).value).strip().upper()
         if val_a == "TT":
@@ -97,7 +94,6 @@ def get_table_bounds(sheet):
                 start_row = r + 2
             break
             
-    # Tìm dòng kết thúc (Đụng chữ Cộng hoặc Tổng ở cuối bảng nếu có)
     end_row = sheet.max_row
     for r in range(start_row, sheet.max_row + 1):
         val_b = str(sheet.cell(row=r, column=2).value or "").lower()
@@ -106,7 +102,6 @@ def get_table_bounds(sheet):
         if "cộng" in val_b or "tổng" in val_b or "cộng" in val_c or "tổng" in val_c or "cộng" in val_a or "tổng" in val_a:
             end_row = r - 1
             break
-            
     return start_row, end_row
 
 def create_program_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
@@ -214,18 +209,33 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
     for tt, sheet_name in enumerate(list_of_sheets, 1):
         source_ws = wb_merged[sheet_name]
         
-        # 1. Định vị bảng để tránh cộng nhầm vào phần TỔNG HỢP ở đầu trang
         start_row, end_row = get_table_bounds(source_ws)
         
-        # 2. Các tiết chính (Cộng chính xác trong phạm vi thân bảng như fen đã chỉ)
-        t_day = sum(get_num(source_ws, r, 8) for r in range(start_row, end_row + 1)) # Cột H
-        t_cong = sum(get_num(source_ws, r, 9) for r in range(start_row, end_row + 1)) # Cột I
-        t_thay = sum(get_num(source_ws, r, 10) for r in range(start_row, end_row + 1)) # Cột J
-        t_tang = sum(get_num(source_ws, r, 11) for r in range(start_row, end_row + 1)) # Cột K
-        t_coi = sum(get_num(source_ws, r, 12) for r in range(start_row, end_row + 1)) # Cột L
+        t_day = sum(get_num(source_ws, r, 8) for r in range(start_row, end_row + 1)) 
+        t_cong = sum(get_num(source_ws, r, 9) for r in range(start_row, end_row + 1)) 
+        t_thay = sum(get_num(source_ws, r, 10) for r in range(start_row, end_row + 1)) 
+        t_tang = sum(get_num(source_ws, r, 11) for r in range(start_row, end_row + 1)) 
+        t_coi = sum(get_num(source_ws, r, 12) for r in range(start_row, end_row + 1)) 
         
-        # 3. Kiêm nhiệm (Lấy trực tiếp ở hàng 10, cột H)
-        t_kiem = get_num(source_ws, 10, 8)
+        # --- RADAR QUÉT NGANG HÀNG 10 TÌM SỐ KIÊM NHIỆM ---
+        t_kiem = 0
+        for c in range(1, 20):
+            val_str = str(source_ws.cell(row=10, column=c).value or "").lower()
+            if "kiêm nhiệm" in val_str:
+                s_val = val_str.replace(',', '.')
+                match = re.search(r'\d+(\.\d+)?', s_val)
+                if match:
+                    t_kiem = float(match.group())
+                    break
+                else:
+                    for next_c in range(c + 1, 20):
+                        tmp = get_num(source_ws, 10, next_c)
+                        if tmp > 0: 
+                            t_kiem = tmp
+                            break
+                    break
+        
+        t_kiem = int(t_kiem) if float(t_kiem).is_integer() else t_kiem
                     
         tong = t_day + t_kiem + t_cong + t_thay + t_tang + t_coi
         thua_thieu = tong - 19 
