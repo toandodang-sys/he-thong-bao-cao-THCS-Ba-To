@@ -10,7 +10,7 @@ import datetime
 st.set_page_config(page_title="Hệ thống Báo cáo Tiết dạy", page_icon="🌟", layout="wide")
 
 st.title("Hệ thống Nộp và Tổng hợp Báo cáo")
-st.write("Phiên bản 15.3: Radar quét tầm xa (Khắc phục tuyệt đối lỗi mất số Kiêm nhiệm).")
+st.write("Phiên bản 15.4: Bắt chính xác số Kiêm nhiệm dính liền văn bản.")
 
 # --- CÁC DANH MỤC CỐ ĐỊNH & TỪ KHÓA NHẬN DIỆN ---
 DANH_SACH_LOP = ['6A1', '6A2', '6A3', '6A4', '7A1', '7A2', '7A3', '7A4', '8A1', '8A2', '8A3', '8A4', '9A1', '9A2', '9A3', '9A4']
@@ -217,29 +217,27 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
         t_tang = sum(get_num(source_ws, r, 11) for r in range(start_row, end_row + 1)) 
         t_coi = sum(get_num(source_ws, r, 12) for r in range(start_row, end_row + 1)) 
         
-        # --- RADAR TÌM KIÊM NHIỆM (ĐÃ MỞ RỘNG TẦM QUÉT ĐẾN TẬN CỘT 25) ---
+        # --- BỘ BẮN TỈA TÌM CHÍNH XÁC SỐ KIÊM NHIỆM ---
         t_kiem = 0
         for c in range(1, 20):
             val_raw = str(source_ws.cell(row=10, column=c).value or "")
             val_str = val_raw.lower()
             if "kiêm nhiệm" in val_str:
-                # Quét tất cả các cột bên phải của chữ "kiêm nhiệm" (quét tới tận cột 25)
-                for next_c in range(c + 1, 25):
-                    tmp = get_num(source_ws, 10, next_c)
-                    if tmp > 0: 
-                        t_kiem = tmp
-                        break
-                
-                # Nếu bên phải trống trơn, tìm ngay trong ô chứa chữ (xóa (1), (2) đi trước)
-                if t_kiem == 0:
-                    clean_str = re.sub(r'\(\d+\)', '', val_raw)
-                    if ":" in clean_str:
-                        clean_str = clean_str.split(":")[-1]
-                    clean_str = clean_str.replace(',', '.')
-                    match = re.search(r'\d+(\.\d+)?', clean_str)
-                    if match:
-                        t_kiem = float(match.group())
-                break
+                # Quét tóm lấy ngay con số phía sau chữ "kiêm nhiệm" hoặc dấu ":" (bỏ qua mọi chữ thừa phía sau)
+                match = re.search(r'kiêm nhiệm\s*[:\-]?\s*(\d+(?:[.,]\d+)?)', val_str)
+                if match:
+                    t_kiem = float(match.group(1).replace(',', '.'))
+                    break
+                else:
+                    # Nếu giáo viên nhập số sang hẳn ô cột bên cạnh
+                    for next_c in range(c + 1, 25):
+                        tmp_val = str(source_ws.cell(row=10, column=next_c).value or "").strip()
+                        if tmp_val: 
+                            match_next = re.search(r'^(\d+(?:[.,]\d+)?)', tmp_val.replace(',', '.'))
+                            if match_next:
+                                t_kiem = float(match_next.group(1))
+                            break
+                    break
         
         t_kiem = int(t_kiem) if float(t_kiem).is_integer() else t_kiem
                     
