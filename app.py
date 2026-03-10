@@ -10,7 +10,7 @@ import datetime
 st.set_page_config(page_title="Hệ thống Báo cáo Tiết dạy", page_icon="🌟", layout="wide")
 
 st.title("Hệ thống Nộp và Tổng hợp Báo cáo")
-st.write("Phiên bản 14.1: Quét dữ liệu Động (Thích ứng mọi biến đổi thêm/xóa dòng của Giáo viên).")
+st.write("Phiên bản 14.2: Tọa độ Tuyệt đối & Xử lý thông minh số thập phân (1,5 tiết).")
 
 # --- CÁC DANH MỤC CỐ ĐỊNH & TỪ KHÓA NHẬN DIỆN ---
 DANH_SACH_LOP = ['6A1', '6A2', '6A3', '6A4', '7A1', '7A2', '7A3', '7A4', '8A1', '8A2', '8A3', '8A4', '9A1', '9A2', '9A3', '9A4']
@@ -70,12 +70,15 @@ def copy_sheet(source_sheet, target_sheet):
         except: pass 
 
 def get_num(sheet, row, col):
+    """Hàm bóc tách số liệu miễn nhiễm với lỗi gõ thập phân bằng dấu phẩy (VD: 1,5)"""
     v = sheet.cell(row=row, column=col).value
-    if v is None: return 0
-    # Xử lý dứt điểm lỗi dấu phẩy thập phân kiểu VN (1,5 tiết)
+    if v is None or str(v).strip() == "": return 0
     s = str(v).strip().replace(',', '.')
     match = re.search(r'-?\d+(\.\d+)?', s)
-    return float(match.group()) if match else 0
+    if match:
+        val = float(match.group())
+        return int(val) if val.is_integer() else val # Trả về số nguyên nếu đuôi .0 cho đẹp
+    return 0
 
 def is_match(val, keys, avoid=None):
     if avoid and any(a in val for a in avoid): return False
@@ -91,13 +94,7 @@ def create_program_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
     for sheet_name in list_of_sheets:
         source_ws = wb_merged[sheet_name]
         
-        # Quét động để lấy tiến độ
-        for r in range(13, source_ws.max_row + 1): 
-            val_b = str(source_ws.cell(row=r, column=2).value or "").lower()
-            val_c = str(source_ws.cell(row=r, column=3).value or "").lower()
-            if "cộng" in val_b or "cộng" in val_c:
-                break # Đụng dòng tổng cộng thì dừng quét môn
-                
+        for r in range(13, 79): 
             mon_val = str(source_ws.cell(row=r, column=5).value or "").strip() 
             lop_val = str(source_ws.cell(row=r, column=6).value or "").strip().upper() 
             tiet_val = get_num(source_ws, r, 7) 
@@ -183,7 +180,6 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
     ws_th['A4'] = title_text; ws_th.merge_cells('A4:K4'); ws_th['A4'].alignment = center_aligned; ws_th['A4'].font = bold_font
     ws_th['A5'] = f"({hoc_ky})"; ws_th.merge_cells('A5:K5'); ws_th['A5'].alignment = center_aligned
 
-    # Sửa tên cột cho phép hiển thị cả số âm (Thiếu tiết)
     headers = ["TT", "Họ và tên CB, giáo viên", "Tổng số tiết thực dạy", "Số tiết kiêm nhiệm", "Số tiết đi công tác", "Số tiết dạy thay", "Số tiết lấp giờ, tăng tiết", "Số tiết coi KT, dự giờ", "Tổng số tiết thực hiện", "Số tiết Thừa/Thiếu", "Ghi chú"]
     for col, h in enumerate(headers, 1):
         cell = ws_th.cell(row=7, column=col); cell.value = h; cell.font = bold_font; cell.alignment = center_aligned; cell.border = thin_border
@@ -192,33 +188,19 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
     for tt, sheet_name in enumerate(list_of_sheets, 1):
         source_ws = wb_merged[sheet_name]
         
-        t_day = t_cong = t_thay = t_tang = t_coi = t_kiem = 0
-        is_main_table = True
+        # BÁM SÁT 100% TỌA ĐỘ DÒNG CỦA BIỂU MẪU CHUẨN ĐỂ ĐẢM BẢO KHÔNG THỂ SAI LỆCH
+        # 1. Các tiết chính (Cộng từ dòng 13 đến 78)
+        t_day = sum(get_num(source_ws, r, 8) for r in range(13, 79))
+        t_cong = sum(get_num(source_ws, r, 9) for r in range(13, 79))
+        t_thay = sum(get_num(source_ws, r, 10) for r in range(13, 79))
+        t_tang = sum(get_num(source_ws, r, 11) for r in range(13, 79))
+        t_coi = sum(get_num(source_ws, r, 12) for r in range(13, 79))
         
-        # QUÉT DỮ LIỆU ĐỘNG: Không fix cứng hàng 13-78 hay 80-81 nữa
-        for r in range(13, source_ws.max_row + 1):
-            val_b = str(source_ws.cell(row=r, column=2).value or "").lower()
-            val_c = str(source_ws.cell(row=r, column=3).value or "").lower()
-            
-            # Đụng dòng "Cộng" -> Ngắt tính bảng chính để không bị cộng gấp đôi
-            if "cộng" in val_b or "cộng" in val_c:
-                is_main_table = False
-                
-            if is_main_table:
-                t_day += get_num(source_ws, r, 8)
-                t_cong += get_num(source_ws, r, 9)
-                t_thay += get_num(source_ws, r, 10)
-                t_tang += get_num(source_ws, r, 11)
-                t_coi += get_num(source_ws, r, 12)
-            else:
-                # Quét radar tìm dòng "kiêm nhiệm" ở nửa dưới bảng
-                if "kiêm nhiệm" in val_b and "cộng" not in val_b:
-                    t_kiem += get_num(source_ws, r, 8)
+        # 2. Số tiết kiêm nhiệm (Nhặt ĐÚNG dòng 80 và 81 ở cột 8)
+        t_kiem = get_num(source_ws, 80, 8) + get_num(source_ws, 81, 8)
                     
         tong = t_day + t_kiem + t_cong + t_thay + t_tang + t_coi
-        
-        # Tiết thừa/thiếu: Cho phép hiện số âm (Ví dụ: -2 là thiếu 2 tiết)
-        thua_thieu = tong - 19
+        thua_thieu = tong - 19 
         
         vals = [tt, sheet_name, t_day, t_kiem, t_cong, t_thay, t_tang, t_coi, tong, thua_thieu, ""]
         for col, v in enumerate(vals, 1):
