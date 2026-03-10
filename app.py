@@ -10,7 +10,7 @@ import datetime
 st.set_page_config(page_title="Hệ thống Báo cáo Tiết dạy", page_icon="🌟", layout="wide")
 
 st.title("Hệ thống Nộp và Tổng hợp Báo cáo")
-st.write("Phiên bản 15.2: Khắc phục lỗi nhận diện nhầm số thứ tự (1), (2) thành số tiết.")
+st.write("Phiên bản 15.3: Radar quét tầm xa (Khắc phục tuyệt đối lỗi mất số Kiêm nhiệm).")
 
 # --- CÁC DANH MỤC CỐ ĐỊNH & TỪ KHÓA NHẬN DIỆN ---
 DANH_SACH_LOP = ['6A1', '6A2', '6A3', '6A4', '7A1', '7A2', '7A3', '7A4', '8A1', '8A2', '8A3', '8A4', '9A1', '9A2', '9A3', '9A4']
@@ -217,123 +217,35 @@ def create_summary_sheet(wb_merged, list_of_sheets, nam_hoc, hoc_ky, tuan):
         t_tang = sum(get_num(source_ws, r, 11) for r in range(start_row, end_row + 1)) 
         t_coi = sum(get_num(source_ws, r, 12) for r in range(start_row, end_row + 1)) 
         
-        # --- RADAR TÌM KIÊM NHIỆM (ĐÃ NÂNG CẤP XÓA SỐ TRONG NGOẶC) ---
+        # --- RADAR TÌM KIÊM NHIỆM (ĐÃ MỞ RỘNG TẦM QUÉT ĐẾN TẬN CỘT 25) ---
         t_kiem = 0
         for c in range(1, 20):
             val_raw = str(source_ws.cell(row=10, column=c).value or "")
             val_str = val_raw.lower()
             if "kiêm nhiệm" in val_str:
-                # Xóa các con số định dạng như (1), (2) khỏi chuỗi để tránh radar bắt nhầm
-                clean_str = re.sub(r'\(\d+\)', '', val_raw)
+                # Quét tất cả các cột bên phải của chữ "kiêm nhiệm" (quét tới tận cột 25)
+                for next_c in range(c + 1, 25):
+                    tmp = get_num(source_ws, 10, next_c)
+                    if tmp > 0: 
+                        t_kiem = tmp
+                        break
                 
-                # Nếu có dấu hai chấm thì chỉ lấy phần đằng sau nó
-                if ":" in clean_str:
-                    clean_str = clean_str.split(":")[-1]
-                
-                clean_str = clean_str.replace(',', '.')
-                match = re.search(r'\d+(\.\d+)?', clean_str)
-                
-                if match:
-                    t_kiem = float(match.group())
-                    break
-                else:
-                    # Tìm ở 4 ô tiếp theo bên tay phải nếu số bị tách cột
-                    for next_c in range(c + 1, c + 5):
-                        tmp_val = str(source_ws.cell(row=10, column=next_c).value or "")
-                        tmp_clean = re.sub(r'\(\d+\)', '', tmp_val).replace(',', '.')
-                        tmp_match = re.search(r'\d+(\.\d+)?', tmp_clean)
-                        if tmp_match:
-                            t_kiem = float(tmp_match.group())
-                            break
-                    break
+                # Nếu bên phải trống trơn, tìm ngay trong ô chứa chữ (xóa (1), (2) đi trước)
+                if t_kiem == 0:
+                    clean_str = re.sub(r'\(\d+\)', '', val_raw)
+                    if ":" in clean_str:
+                        clean_str = clean_str.split(":")[-1]
+                    clean_str = clean_str.replace(',', '.')
+                    match = re.search(r'\d+(\.\d+)?', clean_str)
+                    if match:
+                        t_kiem = float(match.group())
+                break
         
         t_kiem = int(t_kiem) if float(t_kiem).is_integer() else t_kiem
                     
-        # TỔNG SỐ TIẾT THỰC HIỆN BẰNG TẤT CẢ CỘNG LẠI (BAO GỒM KIÊM NHIỆM)
+        # TỔNG SỐ TIẾT THỰC HIỆN = CÁC TIẾT DẠY + KIÊM NHIỆM
         tong = t_day + t_kiem + t_cong + t_thay + t_tang + t_coi
         thua_thieu = tong - 19 
         
         vals = [tt, sheet_name, t_day, t_kiem, t_cong, t_thay, t_tang, t_coi, tong, thua_thieu, ""]
-        for col, v in enumerate(vals, 1):
-            cell = ws_th.cell(row=row_idx, column=col); cell.value = v; cell.border = thin_border; cell.alignment = center_aligned
-        row_idx += 1
-
-SAVE_DIR = "Du_Lieu_Bao_Cao"
-if not os.path.exists(SAVE_DIR): os.makedirs(SAVE_DIR)
-
-DANH_SACH_GV = ["Nguyễn Văn Lộc", "Đỗ Văn Linh", "Huỳnh Thị Hạ Quyên", "Phạm Thị Mỹ Thuận", "Huỳnh Thị Huyên", "Đỗ Đặng Toàn", "Bùi Thị Xuân Nhựt", "Nguyễn Thị Như Ái", "Phạm Thị Lai Tình", "Trần Văn Hoàng", "Ngô Hữu Hoá", "Phạm Thuỵ Thuỳ Nghi", "Đỗ Thanh Vũ", "Phạm Bá Quyết", "Võ Quang Tuyên", "Nguyễn Văn Thân", "Nguyễn Minh Văn", "Lê Thị Tuyết Lệ", "Trần Đình Thảo", "Bùi Thanh Tâm", "Bùi Thị Bích Vân", "K Mah Ri Lan", "Nguyễn Mẫn Thu", "Lê Thị Kim Tuyết", "Lê Thị Tường Vy", "Nguyễn Thị Thúy Hằng", "Trần Thị Kim Anh", "Nguyễn Thị Hoan", "Đinh Thị Xuân Trâm"]
-
-st.sidebar.header("Cài đặt thông số")
-nam_hoc = st.sidebar.text_input("Năm học:", "2025 - 2026")
-hoc_ky = st.sidebar.selectbox("Học kỳ:", ["HỌC KỲ I", "HỌC KỲ II"], index=1)
-danh_sach_tuan = [f"Tuần {i}" for i in range(1, 36)]
-
-tab1, tab2 = st.tabs(["📤 Khu vực Giáo viên nộp bài", "⚙️ Khu vực Quản lý tổng hợp"])
-
-with tab1:
-    st.header(f"Nộp báo cáo ({hoc_ky} - {nam_hoc})")
-    tuan_nop = st.selectbox("Chọn tuần báo cáo:", danh_sach_tuan, index=24) 
-    ten_gv = st.selectbox("Chọn tên của bạn:", DANH_SACH_GV)
-    uploaded_file = st.file_uploader("Chọn file Excel", type=['xlsx'])
-    if st.button("📤 Nộp Báo Cáo"):
-        if uploaded_file:
-            path = os.path.join(SAVE_DIR, nam_hoc.replace(" ",""), hoc_ky.replace(" ","_"), tuan_nop.replace(" ","_"))
-            if not os.path.exists(path): os.makedirs(path)
-            with open(os.path.join(path, f"{ten_gv}.xlsx"), "wb") as f: f.write(uploaded_file.getbuffer())
-            st.success("Nộp thành công!")
-
-with tab2:
-    st.header("Danh sách và Tổng hợp")
-    mat_khau = st.text_input("🔑 Nhập mật khẩu để truy cập khu vực Quản lý:", type="password")
-    
-    if mat_khau == "bato2026": 
-        st.success("Mở khóa thành công!")
-        tuan_th = st.selectbox("Chọn tuần tổng hợp:", danh_sach_tuan, index=24)
-        path_th = os.path.join(SAVE_DIR, nam_hoc.replace(" ",""), hoc_ky.replace(" ","_"), tuan_th.replace(" ","_"))
-        
-        files = [f for f in os.listdir(path_th) if f.endswith('.xlsx')] if os.path.exists(path_th) else []
-        
-        gv_da_nop_info = []
-        gv_da_nop_names = []
-        if files:
-            for f in files:
-                name = f.replace('.xlsx', '')
-                gv_da_nop_names.append(name)
-                mtime = os.path.getmtime(os.path.join(path_th, f))
-                time_str = datetime.datetime.fromtimestamp(mtime).strftime("%H:%M - %d/%m")
-                gv_da_nop_info.append(f"{name} (Lúc {time_str})")
-        
-        gv_chua_nop = [g for g in DANH_SACH_GV if g not in gv_da_nop_names]
-
-        col1, col2 = st.columns(2)
-        with col1: 
-            st.subheader(f"✅ Đã nộp ({len(gv_da_nop_names)})")
-            with st.container(height=250):
-                for info in gv_da_nop_info: st.write(f"- {info}")
-                
-        with col2: 
-            st.subheader(f"⏳ Chưa nộp ({len(gv_chua_nop)})")
-            with st.container(height=250):
-                for g in gv_chua_nop: st.write(f"- {g}")
-
-        st.write("---")
-        if files and st.button(f"⚙️ Tiến hành tổng hợp {tuan_th}"):
-            wb_merged = openpyxl.Workbook()
-            wb_merged.remove(wb_merged.active)
-            with st.spinner('Đang tổng hợp dữ liệu...'):
-                list_s = []
-                for f in files:
-                    ws_src = openpyxl.load_workbook(os.path.join(path_th, f), data_only=True).active
-                    name = f.replace('.xlsx','')[:31]
-                    ws_tgt = wb_merged.create_sheet(title=name)
-                    copy_sheet(ws_src, ws_tgt)
-                    list_s.append(name)
-                
-                create_program_sheet(wb_merged, list_s, nam_hoc, hoc_ky, tuan_th)
-                create_summary_sheet(wb_merged, list_s, nam_hoc, hoc_ky, tuan_th)
-                
-                output = io.BytesIO()
-                wb_merged.save(output)
-                st.download_button(label="📥 Tải file tổng hợp", data=output.getvalue(), file_name=f"Tong_hop_{tuan_th}.xlsx")
-    elif mat_khau != "":
-        st.error("❌ Mật khẩu không chính xác! Vui lòng thử lại.")
+        for col, v in enumerate(vals,
